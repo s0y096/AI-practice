@@ -88,6 +88,58 @@ def deduplicate(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return unique_rows
 
 
+def compute_statistics(rows: list[dict[str, str]], original_count: int) -> dict[str, Any]:
+    """计算数据集的统计信息"""
+    if not rows:
+        return {}
+
+    # 提取各字段长度
+    instruction_lens = [len(row["instruction"]) for row in rows]
+    input_lens = [len(row["input"]) for row in rows]
+    output_lens = [len(row["output"]) for row in rows]
+
+    # 计算空值数量
+    empty_instruction = sum(1 for row in rows if not row["instruction"])
+    empty_input = sum(1 for row in rows if not row["input"])
+    empty_output = sum(1 for row in rows if not row["output"])
+
+    total = len(rows)
+
+    def get_length_stats(lengths: list[int]) -> dict[str, Any]:
+        """计算长度的统计指标"""
+        sorted_lens = sorted(lengths)
+        return {
+            "mean": sum(lengths) / len(lengths) if lengths else 0,
+            "min": min(lengths) if lengths else 0,
+            "max": max(lengths) if lengths else 0,
+            "median": sorted_lens[len(sorted_lens) // 2] if sorted_lens else 0,
+            "p25": sorted_lens[len(sorted_lens) // 4] if sorted_lens else 0,
+            "p75": sorted_lens[len(sorted_lens) * 3 // 4] if sorted_lens else 0,
+        }
+
+    return {
+        "total_samples": total,
+        "original_samples": original_count,
+        "duplicate_count": original_count - total,
+        "duplicate_rate": (original_count - total) / original_count if original_count > 0 else 0,
+        "instruction_stats": {
+            **get_length_stats(instruction_lens),
+            "empty_count": empty_instruction,
+            "empty_rate": empty_instruction / total if total > 0 else 0,
+        },
+        "input_stats": {
+            **get_length_stats(input_lens),
+            "empty_count": empty_input,
+            "empty_rate": empty_input / total if total > 0 else 0,
+        },
+        "output_stats": {
+            **get_length_stats(output_lens),
+            "empty_count": empty_output,
+            "empty_rate": empty_output / total if total > 0 else 0,
+        },
+    }
+
+
 def split_rows(
     rows: list[dict[str, str]], train_ratio: float, valid_ratio: float, seed: int
 ) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
@@ -137,7 +189,12 @@ def main() -> None:
         raw_rows.extend(read_parquet(parquet_file))
 
     converted = [row for row in (convert_row(raw) for raw in raw_rows) if row is not None]
+    converted_before_dedup = len(converted)
     converted = deduplicate(converted)
+
+    # 计算统计信息（在 limit 之前，获取完整数据的统计）
+    statistics = compute_statistics(converted, converted_before_dedup)
+
     if args.limit > 0:
         converted = converted[: args.limit]
     if len(converted) < 3:
@@ -159,12 +216,34 @@ def main() -> None:
         },
     )
 
+    # 保存统计信息到 JSON 文件
+    save_json(args.output_dir / "data_statistics.json", statistics)
+
+    # 打印基本信息
     print(f"Read {len(raw_rows)} raw rows from {len(parquet_files)} parquet file(s).")
     print(f"Kept {len(converted)} valid unique rows.")
     print(f"Wrote train: {len(train_rows)} -> {args.output_dir / 'code_sft_train.json'}")
     print(f"Wrote valid: {len(valid_rows)} -> {args.output_dir / 'code_sft_valid.json'}")
     print(f"Wrote test : {len(test_rows)} -> {args.output_dir / 'code_sft_test.json'}")
     print(f"Wrote registry -> {args.output_dir / 'dataset_info.json'}")
+
+    # 打印统计摘要
+    print("\n========== 数据质量统计 ==========")
+    print(f"原始有效样本数 : {statistics['original_samples']}")
+    print(f"去重后样本数   : {statistics['total_samples']}")
+    print(f"重复样本数     : {statistics['duplicate_count']}  (重复率: {statistics['duplicate_rate']:.2%})")
+
+    for field in ("instruction", "input", "output"):
+        s = statistics[f"{field}_stats"]
+        print(f"\n[{field}]")
+        print(f"  空值数量 : {s['empty_count']}  (空值率: {s['empty_rate']:.2%})")
+        print(f"  平均长度 : {s['mean']:.1f} 字符")
+        print(f"  最短/最长: {s['min']} / {s['max']} 字符")
+        print(f"  中位数   : {s['median']} 字符")
+        print(f"  25%/75%  : {s['p25']} / {s['p75']} 字符")
+
+    print(f"\n统计文件已保存 -> {args.output_dir / 'data_statistics.json'}")
+    print("===================================")
 
 
 if __name__ == "__main__":
