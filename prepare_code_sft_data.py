@@ -140,6 +140,43 @@ def compute_statistics(rows: list[dict[str, str]], original_count: int) -> dict[
     }
 
 
+def filter_rows(
+    rows: list[dict[str, str]],
+    min_instruction_len: int = 0,
+    max_instruction_len: int = 0,
+    min_output_len: int = 0,
+    max_output_len: int = 0,
+) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+    """过滤不符合质量要求的样本，返回 (合格样本列表, 被过滤样本列表)。
+
+    被过滤样本附带 reason 字段，说明过滤原因，方便后续写入 bad_cases.json。
+    """
+    passed: list[dict[str, str]] = []
+    bad_cases: list[dict[str, Any]] = []
+
+    for row in rows:
+        reasons: list[str] = []
+
+        inst_len = len(row["instruction"])
+        out_len = len(row["output"])
+
+        if min_instruction_len > 0 and inst_len < min_instruction_len:
+            reasons.append(f"instruction 过短: {inst_len} < {min_instruction_len}")
+        if max_instruction_len > 0 and inst_len > max_instruction_len:
+            reasons.append(f"instruction 过长: {inst_len} > {max_instruction_len}")
+        if min_output_len > 0 and out_len < min_output_len:
+            reasons.append(f"output 过短: {out_len} < {min_output_len}")
+        if max_output_len > 0 and out_len > max_output_len:
+            reasons.append(f"output 过长: {out_len} > {max_output_len}")
+
+        if reasons:
+            bad_cases.append({**row, "filter_reasons": reasons})
+        else:
+            passed.append(row)
+
+    return passed, bad_cases
+
+
 def split_rows(
     rows: list[dict[str, str]], train_ratio: float, valid_ratio: float, seed: int
 ) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
@@ -181,6 +218,19 @@ def main() -> None:
     parser.add_argument("--train_ratio", type=float, default=0.90)
     parser.add_argument("--valid_ratio", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=42)
+    # 数据质量过滤参数
+    parser.add_argument("--min_output_len", type=int, default=10,
+                        help="output 最短字符数，低于此值的样本将被过滤（0 表示不限制）。")
+    parser.add_argument("--max_output_len", type=int, default=4096,
+                        help="output 最长字符数，超过此值的样本将被过滤（0 表示不限制）。")
+    parser.add_argument("--min_instruction_len", type=int, default=5,
+                        help="instruction 最短字符数（0 表示不限制）。")
+    parser.add_argument("--max_instruction_len", type=int, default=0,
+                        help="instruction 最长字符数（0 表示不限制）。")
+    parser.add_argument("--remove_duplicates", type=lambda x: x.lower() != "false",
+                        default=True, help="是否去重，默认 true；传入 false 可跳过去重步骤。")
+    parser.add_argument("--preview_count", type=int, default=10,
+                        help="保存到 sample_preview.json 的样本数量，默认 10（0 表示不生成）。")
     args = parser.parse_args()
 
     parquet_files = find_parquet_files(args.source_dir)
@@ -190,10 +240,24 @@ def main() -> None:
 
     converted = [row for row in (convert_row(raw) for raw in raw_rows) if row is not None]
     converted_before_dedup = len(converted)
-    converted = deduplicate(converted)
+
+    # 可选的去重步骤
+    if args.remove_duplicates:
+        converted = deduplicate(converted)
+    converted_after_dedup = len(converted)  # 去重后、过滤前的数量
+
+    # 应用质量过滤
+    converted, bad_cases = filter_rows(
+        converted,
+        min_instruction_len=args.min_instruction_len,
+        max_instruction_len=args.max_instruction_len,
+        min_output_len=args.min_output_len,
+        max_output_len=args.max_output_len,
+    )
 
     # 计算统计信息（在 limit 之前，获取完整数据的统计）
-    statistics = compute_statistics(converted, converted_before_dedup)
+    # 传入 converted_after_dedup 而非 converted_before_dedup，避免把过滤样本误算为重复
+    statistics = compute_statistics(converted, converted_after_dedup)
 
     if args.limit > 0:
         converted = converted[: args.limit]
@@ -219,6 +283,40 @@ def main() -> None:
     # 保存统计信息到 JSON 文件
     save_json(args.output_dir / "data_statistics.json", statistics)
 
+    # 保存过滤后的样本预览（用于人工检查数据格式）
+    if args.preview_count > 0:
+        preview_samples = converted[: args.preview_count]
+        preview_output = [
+            {
+                "index": i,
+                "instruction": row["instruction"],
+                "input": row["input"],
+                "output": row["output"],
+                "instruction_len": len(row["instruction"]),
+                "input_len": len(row["input"]),
+                "output_len": len(row["output"]),
+            }
+            for i, row in enumerate(preview_samples)
+        ]
+        save_json(args.output_dir / "sample_preview.json", preview_output)
+
+    # 保存被过滤的样本（附带过滤原因，用于分析过滤策略是否合理）
+    if bad_cases:
+        bad_cases_output = [
+            {
+                "index": i,
+                "filter_reasons": case["filter_reasons"],
+                "instruction": case["instruction"],
+                "input": case["input"],
+                "output": case["output"],
+                "instruction_len": len(case["instruction"]),
+                "input_len": len(case["input"]),
+                "output_len": len(case["output"]),
+            }
+            for i, case in enumerate(bad_cases)
+        ]
+        save_json(args.output_dir / "bad_cases.json", bad_cases_output)
+
     # 打印基本信息
     print(f"Read {len(raw_rows)} raw rows from {len(parquet_files)} parquet file(s).")
     print(f"Kept {len(converted)} valid unique rows.")
@@ -227,11 +325,25 @@ def main() -> None:
     print(f"Wrote test : {len(test_rows)} -> {args.output_dir / 'code_sft_test.json'}")
     print(f"Wrote registry -> {args.output_dir / 'dataset_info.json'}")
 
+    # 打印过滤参数和结果
+    print("\n========== 数据质量过滤 ==========")
+    print(f"去重开关            : {'开启' if args.remove_duplicates else '关闭'}")
+    print(f"instruction 长度限制: [{args.min_instruction_len or '不限'}, {args.max_instruction_len or '不限'}]")
+    print(f"output 长度限制     : [{args.min_output_len or '不限'}, {args.max_output_len or '不限'}]")
+    print(f"原始有效样本数      : {converted_before_dedup}")
+    dedup_removed = converted_before_dedup - converted_after_dedup
+    print(f"去重删除样本数      : {dedup_removed}  (去重后剩余: {converted_after_dedup})")
+    print(f"质量过滤删除样本数  : {len(bad_cases)}")
+    print(f"最终样本数          : {len(converted)}")
+    if bad_cases:
+        print(f"bad_cases 已保存 -> {args.output_dir / 'bad_cases.json'}  ({len(bad_cases)} 条)")
+    if args.preview_count > 0:
+        preview_count_actual = min(args.preview_count, len(converted))
+        print(f"sample_preview 已保存 -> {args.output_dir / 'sample_preview.json'}  (前 {preview_count_actual} 条)")
+
     # 打印统计摘要
     print("\n========== 数据质量统计 ==========")
-    print(f"原始有效样本数 : {statistics['original_samples']}")
-    print(f"去重后样本数   : {statistics['total_samples']}")
-    print(f"重复样本数     : {statistics['duplicate_count']}  (重复率: {statistics['duplicate_rate']:.2%})")
+    print(f"参与统计样本数 : {statistics['total_samples']}  (去重+过滤后)")
 
     for field in ("instruction", "input", "output"):
         s = statistics[f"{field}_stats"]
