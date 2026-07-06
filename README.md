@@ -6,7 +6,9 @@
 #!/usr/bin/env python3"""Prepare python-code Alpaca data for LLaMA-Factory SFT."""
 from __future__ import annotations
 import argparse   # 处理命令行参数import json       # 读写JSON 文件import random# 打乱数据顺序from pathlib import Path   # 跨平台路径操作from typing import Any     # 类型标注用
-PROJECT_ROOT = Path(__file__).resolve().parents[2]DEFAULT_SOURCE_DIR = PROJECT_ROOT / "python_code_instructions_18k_alpaca"DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "sft" / "data"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_SOURCE_DIR = PROJECT_ROOT / "python_code_instructions_18k_alpaca"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "sft" / "data"
 ```
 
 **解释：**
