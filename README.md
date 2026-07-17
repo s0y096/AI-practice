@@ -176,7 +176,7 @@ LIMIT=1000 bash sft/scripts/prepare_data.sh
 
 ### 4.6 基础功能结果截图
 
-![屏幕截图 2026-07-14 114509](C:\Users\26715\Pictures\Screenshots\屏幕截图 2026-07-14 114509.png)
+![image](images\screenshot_1.png)
 
 
 ---
@@ -338,7 +338,7 @@ python sft/scripts/prepare_code_sft_data.py \
 
 #### 示例图片
 
-![image-20260714115546039](C:\Users\26715\AppData\Roaming\Typora\typora-user-images\image-20260714115546039.png)
+![image](images\screenshot_2.png)
 
 ---
 
