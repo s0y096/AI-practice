@@ -176,7 +176,7 @@ LIMIT=1000 bash sft/scripts/prepare_data.sh
 
 ### 4.6 基础功能结果截图
 
-![image](images\screenshot_1.png)
+![image](images/screenshot_1.png)
 
 
 ---
@@ -338,7 +338,7 @@ python sft/scripts/prepare_code_sft_data.py \
 
 #### 示例图片
 
-![image](images\screenshot_2.png)
+![image](images/screenshot_2.png)
 
 ---
 
