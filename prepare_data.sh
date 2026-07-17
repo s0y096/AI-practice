@@ -14,4 +14,14 @@ cd "${PROJECT_ROOT}"
   --limit "${LIMIT:-0}" \
   --train_ratio "${TRAIN_RATIO:-0.90}" \
   --valid_ratio "${VALID_RATIO:-0.05}" \
-  --seed "${SEED:-42}"
+  --seed "${SEED:-42}" \
+  --min_output_len "${MIN_OUTPUT_LEN:-10}" \
+  --max_output_len "${MAX_OUTPUT_LEN:-4096}" \
+  --min_instruction_len "${MIN_INSTRUCTION_LEN:-5}" \
+  --max_instruction_len "${MAX_INSTRUCTION_LEN:-0}" \
+  --remove_duplicates "${REMOVE_DUPLICATES:-True}" \
+  --preview_count "${PREVIEW_COUNT:-10}" \
+  --high_quality "${HIGH_QUALITY:-True}" \
+  --require_parsable "${REQUIRE_PARSABLE:-True}" \
+  --require_complete "${REQUIRE_COMPLETE:-True}" \
+  --max_per_type "${MAX_PER_TYPE:-0}"
