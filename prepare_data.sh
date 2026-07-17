@@ -20,4 +20,8 @@ cd "${PROJECT_ROOT}"
   --min_instruction_len "${MIN_INSTRUCTION_LEN:-5}" \
   --max_instruction_len "${MAX_INSTRUCTION_LEN:-0}" \
   --remove_duplicates "${REMOVE_DUPLICATES:-True}" \
-  --preview_count "${PREVIEW_COUNT:-10}"
+  --preview_count "${PREVIEW_COUNT:-10}" \
+  --high_quality "${HIGH_QUALITY:-True}" \
+  --require_parsable "${REQUIRE_PARSABLE:-True}" \
+  --require_complete "${REQUIRE_COMPLETE:-True}" \
+  --max_per_type "${MAX_PER_TYPE:-0}"
